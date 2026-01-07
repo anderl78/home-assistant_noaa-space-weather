@@ -1,9 +1,0 @@
-#!/bin/bash
-
-set -e
-
-cd "$(dirname "$0")/../.."
-
-ls
-
-python -m pip install -r requirements_test.txt

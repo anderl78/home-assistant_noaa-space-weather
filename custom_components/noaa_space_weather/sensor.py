@@ -1,175 +1,169 @@
 """Sensor platform for NOAA Space Weather."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Callable
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorEntityDescription,
+    SensorDeviceClass,
+    SensorStateClass,
+)
+
 from .const import DOMAIN
-from .const import ICON
-from .entity import NoaaSpaceWeatherEntity
+from .entity import NoaaSpaceWeatherBaseEntity
+from . import NoaaSpaceWeatherDataUpdateCoordinator
 
 
-def sfi_return(coordinator):
-    if not coordinator.data.get("sfi_data") is None:
-        return coordinator.data.get("sfi_data").get("sfi")
+def _safe_float(value: Any) -> float | None:
+    """Convert to float safely."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
-def ai_return(coordinator):
-    if not coordinator.data.get("a_index_data") is None:
-        return coordinator.data.get("a_index_data", {}).get("a_index")
+def _safe_int(value: Any) -> int | None:
+    """Convert to int safely."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
-def ai_2d_return(coordinator):
-    if not coordinator.data.get("a_index_data") is None:
-        return coordinator.data.get("a_index_data", {}).get("a_2_day_index")
+def _get_first(d: dict[str, Any], key: str) -> dict[str, Any]:
+    """Get first element of a list stored in d[key], or {}."""
+    val = d.get(key)
+    if isinstance(val, list) and val:
+        first = val[0]
+        if isinstance(first, dict):
+            return first
+    return {}
 
 
-def ai_3d_return(coordinator):
-    if not coordinator.data.get("a_index_data") is None:
-        return coordinator.data.get("a_index_data", {}).get("a_3_day_index")
+def _get_value(path_getter: Callable[[dict[str, Any]], Any], data: dict[str, Any]) -> Any:
+    """Apply getter defensively."""
+    try:
+        return path_getter(data)
+    except Exception:
+        return None
 
 
-def kpi_return(coordinator):
-    if not coordinator.data.get("kp_index_data") is None:
-        return coordinator.data.get("kp_index_data", {}).get("kp_index")
+@dataclass(frozen=True, kw_only=True)
+class NoaaSpaceWeatherSensorEntityDescription(SensorEntityDescription):
+    """Describes NOAA Space Weather sensor entity."""
+
+    value_fn: Callable[[dict[str, Any]], Any]
 
 
-def ssn_return(coordinator):
-    if not coordinator.data.get("ssn_data") is None:
-        return coordinator.data.get("ssn_data", {}).get("ssn")
+SENSORS: tuple[NoaaSpaceWeatherSensorEntityDescription, ...] = (
+    # --- Solar activity / flare probabilities (typically in probabilities_data[0]) ---
+    NoaaSpaceWeatherSensorEntityDescription(
+        key="c_class_1_day",
+        name="C-class flare probability (1 day)",
+        native_unit_of_measurement="%",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: _safe_float(_get_first(data, "probabilities_data").get("c_class_1_day")),
+    ),
+    NoaaSpaceWeatherSensorEntityDescription(
+        key="m_class_1_day",
+        name="M-class flare probability (1 day)",
+        native_unit_of_measurement="%",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: _safe_float(_get_first(data, "probabilities_data").get("m_class_1_day")),
+    ),
+    NoaaSpaceWeatherSensorEntityDescription(
+        key="x_class_1_day",
+        name="X-class flare probability (1 day)",
+        native_unit_of_measurement="%",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: _safe_float(_get_first(data, "probabilities_data").get("x_class_1_day")),
+    ),
+    NoaaSpaceWeatherSensorEntityDescription(
+        key="c_class_2_day",
+        name="C-class flare probability (2 days)",
+        native_unit_of_measurement="%",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: _safe_float(_get_first(data, "probabilities_data").get("c_class_2_day")),
+    ),
+    NoaaSpaceWeatherSensorEntityDescription(
+        key="m_class_2_day",
+        name="M-class flare probability (2 days)",
+        native_unit_of_measurement="%",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: _safe_float(_get_first(data, "probabilities_data").get("m_class_2_day")),
+    ),
+    NoaaSpaceWeatherSensorEntityDescription(
+        key="x_class_2_day",
+        name="X-class flare probability (2 days)",
+        native_unit_of_measurement="%",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: _safe_float(_get_first(data, "probabilities_data").get("x_class_2_day")),
+    ),
+    # --- Planetary K-index (often kp_index_data[0]) ---
+    NoaaSpaceWeatherSensorEntityDescription(
+        key="planetary_k_index",
+        name="Planetary K-index",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: _safe_float(_get_first(data, "kp_index_data").get("planetary_k_index")),
+    ),
+    # --- Sunspot number (often solar_cycle_data[0]) ---
+    NoaaSpaceWeatherSensorEntityDescription(
+        key="sunspot_number",
+        name="Sunspot number",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: _safe_int(_get_first(data, "solar_cycle_data").get("sunspot_number")),
+    ),
+)
 
 
-def x1_return(coordinator):
-    if not coordinator.data.get("probabilities_data") is None:
-        return float(
-            coordinator.data.get("probabilities_data", [{}])[0].get("x_class_1_day")
-        )
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up NOAA Space Weather sensors from a config entry."""
+    coordinator: NoaaSpaceWeatherDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-
-def m1_return(coordinator):
-    if not coordinator.data.get("probabilities_data") is None:
-        return coordinator.data.get("probabilities_data", [{}])[0].get("m_class_1_day")
-
-
-def polar_cap_absorption_return(coordinator):
-    if not coordinator.data.get("probabilities_data") is None:
-        return coordinator.data.get("probabilities_data", [{}])[0].get(
-            "polar_cap_absorption"
-        )
-
-
-async def async_setup_entry(hass, entry, async_add_devices):
-    """Setup sensor platform."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
-    sensormap = [
-        {
-            "name": "SFI",
-            "desc": "Solar Flux Index",
-            "data": sfi_return,
-        },
-        {
-            "name": "AI",
-            "desc": "A Index",
-            "data": ai_return,
-        },
-        {
-            "name": "AI2D",
-            "desc": "A Index 2 Day",
-            "data": ai_2d_return,
-        },
-        {
-            "name": "AI3D",
-            "desc": "A Index 3 Day",
-            "data": ai_3d_return,
-        },
-        {
-            "name": "KPI",
-            "desc": "Planetary K-Index",
-            "data": kpi_return,
-        },
-        {
-            "name": "SSN",
-            "desc": "Sunspot Number",
-            "data": ssn_return,
-        },
-        {
-            "name": "PolarCapAbsorption",
-            "desc": "Polar Cap Absorption",
-            "data": polar_cap_absorption_return,
-            "state_class": None,
-            "icon": "mdi:sign-pole",
-            "unit": None,
-        },
-        {
-            "name": "x1",
-            "icon": "mdi:sun-wireless",
-            "desc": "X-Class 1 Day Probability",
-            "data": x1_return,
-            "unit": "%",
-        },
-        {
-            "name": "m1",
-            "icon": "mdi:sun-wireless-outline",
-            "desc": "M-Class 1 Day Probability",
-            "data": m1_return,
-            "unit": "%",
-        },
+    entities: list[NoaaSpaceWeatherSensor] = [
+        NoaaSpaceWeatherSensor(coordinator, entry, description)
+        for description in SENSORS
     ]
-    async_add_devices(
-        [NoaaSpaceWeatherSensor(coordinator, entry, sensor=s) for s in sensormap]
-    )
+    async_add_entities(entities)
 
 
-class NoaaSpaceWeatherSensor(NoaaSpaceWeatherEntity):
-    """noaa_space_weather Sensor class."""
+class NoaaSpaceWeatherSensor(NoaaSpaceWeatherBaseEntity, SensorEntity):
+    """NOAA Space Weather sensor."""
 
-    def __init__(self, coordinator, entry, sensor):
-        self.sensor = sensor
+    entity_description: NoaaSpaceWeatherSensorEntityDescription
+
+    def __init__(
+        self,
+        coordinator: NoaaSpaceWeatherDataUpdateCoordinator,
+        entry: ConfigEntry,
+        description: NoaaSpaceWeatherSensorEntityDescription,
+    ) -> None:
+        """Initialize sensor."""
         super().__init__(coordinator, entry)
+        self.entity_description = description
+
+        # Stable unique ID per config entry + sensor key
+        self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+
+        # Nice entity_id naming; HA will handle final formatting
+        self._attr_translation_key = description.key
 
     @property
-    def state_class(self):
-        return self.sensor.get("state_class", "measurement")
-
-    @property
-    def unit_of_measurement(self):
-        return self.sensor.get("unit", "")
-
-    @property
-    def options(self):
-        return self.sensor.get("options", None)
-
-    @property
-    def state(self):
-        """Return the state of the sensor."""
-        if self.coordinator.data:
-            data = self.sensor["data"](self.coordinator)
-            return data
-        else:
-            return None
-
-    @property
-    def unique_id(self):
-        return f"swpc {self.sensor['name']}"
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self.sensor["desc"]
-
-    @property
-    def available(self):
-        """Return the state of the sensor."""
-        return True
-
-    @property
-    def icon(self):
-        """Return the icon of the sensor."""
-        try:
-            icon = self.sensor["icon"]
-        except KeyError:
-            icon = ICON
-        return icon
-
-    @property
-    def device_class(self):
-        """Return the device class of the sensor."""
-        return self.sensor.get(
-            "device_class", "noaa_space_weather__custom_device_class"
-        )
+    def native_value(self) -> Any:
+        """Return the sensor value."""
+        data = self.coordinator.data or {}
+        return _get_value(self.entity_description.value_fn, data)

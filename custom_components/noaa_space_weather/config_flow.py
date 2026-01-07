@@ -1,33 +1,44 @@
-"""Config flow to configure the NOAA Space Weather integration."""
+"""Config flow for NOAA Space Weather."""
 
 from __future__ import annotations
 
-from typing import Any
+from homeassistant import config_entries
+from homeassistant.core import callback
 
-from homeassistant.config_entries import ConfigFlow
-from homeassistant.data_entry_flow import FlowResult
-
-from .const import DEFAULT_NAME
 from .const import DOMAIN
 
 
-class NoaaSpaceWeatherConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Config flow for NOAA Space Weather."""
+class NoaaSpaceWeatherFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for NOAA Space Weather."""
 
     VERSION = 1
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle a flow initialized by the user."""
-        if self._async_current_entries():
-            return self.async_abort(reason="single_instance_allowed")
+    async def async_step_user(self, user_input=None):
+        """Handle the initial step."""
+        # Single instance
+        await self.async_set_unique_id(DOMAIN)
+        self._abort_if_unique_id_configured()
 
         if user_input is not None:
-            return self.async_create_entry(title=DEFAULT_NAME, data={})
+            return self.async_create_entry(title="NOAA Space Weather", data={})
 
         return self.async_show_form(step_id="user")
 
-    async def async_step_import(self, user_input: dict[str, Any]) -> FlowResult:
-        """Handle import from configuration.yaml."""
-        return await self.async_step_user(user_input)
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        """Get the options flow for this handler."""
+        return NoaaSpaceWeatherOptionsFlowHandler(config_entry)
+
+
+class NoaaSpaceWeatherOptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle options."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry):
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(self, user_input=None):
+        """Manage the options."""
+        # No options currently
+        return self.async_create_entry(title="", data={})

@@ -1,12 +1,11 @@
 {
   "domain": "noaa_space_weather",
   "name": "NOAA Space Weather",
-  "codeowners": ["@tcarwash"],
+  "codeowners": ["@anderl78"],
   "config_flow": true,
-  "dependencies": [],
-  "documentation": "https://github.com/tcarwash/home-assistant_noaa-space-weather",
+  "documentation": "https://github.com/anderl78/home-assistant_noaa-space-weather",
+  "issue_tracker": "https://github.com/anderl78/home-assistant_noaa-space-weather/issues",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/tcarwash/home-assistant_noaa-space-weather/issues",
   "requirements": ["swpclib>=4.2.0"],
-  "version": "2.0.4"
+  "version": "3.0"
 }

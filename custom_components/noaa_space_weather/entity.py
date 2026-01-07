@@ -1,29 +1,34 @@
-"""NoaaSpaceWeatherEntity class"""
+"""Shared entity helpers for NOAA Space Weather."""
 
+from __future__ import annotations
+
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import ATTRIBUTION
 from .const import DOMAIN
+from . import NoaaSpaceWeatherDataUpdateCoordinator
 
 
-class NoaaSpaceWeatherEntity(CoordinatorEntity):
-    """NOAA Space Weather Entity"""
+class NoaaSpaceWeatherBaseEntity(CoordinatorEntity[NoaaSpaceWeatherDataUpdateCoordinator]):
+    """Base entity for NOAA Space Weather."""
 
-    def __init__(self, coordinator, config_entry):
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: NoaaSpaceWeatherDataUpdateCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize."""
         super().__init__(coordinator)
-        self.config_entry = config_entry
+        self._entry = entry
 
     @property
-    def unique_id(self):
-        """Return a unique ID to use for this entity."""
-        return self.config_entry.entry_id
-
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes."""
+    def device_info(self):
+        """Return device info for the integration."""
         return {
-            "attribution": ATTRIBUTION,
-            "id": str(self.coordinator.data.get("id")),
-            "integration": DOMAIN,
-            "state_class": "measurement",
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": "NOAA Space Weather",
+            "manufacturer": "NOAA / SWPC",
+            "entry_type": "service",
         }

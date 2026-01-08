@@ -1,12 +1,16 @@
 """Image platform for NOAA Space Weather (animated SUVI PNG sequences).
 
 SWPC provides directories with many PNG frames + a latest.png.
-We animate by cycling through the most recent N frames and updating image_last_updated
-so the frontend fetches the new image.
+We animate by cycling through the most recent N frames.
+
+IMPORTANT: Time interval callbacks may run off the event loop. Therefore we must not call
+hass.async_create_task directly from them. We schedule work onto the HA event loop
+using loop.call_soon_threadsafe + asyncio.create_task.
 """
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass
 from datetime import timedelta
@@ -63,7 +67,6 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up SUVI animated image entities (primary+secondary for all bands)."""
     session = async_get_clientsession(hass)
 
     entities: list[NoaaSuviAnimatedPngImage] = []
@@ -83,8 +86,6 @@ async def async_setup_entry(
 
 
 class NoaaSuviAnimatedPngImage(ImageEntity):
-    """Animated ImageEntity backed by SWPC PNG frames."""
-
     _attr_content_type = "image/png"
     _attr_has_entity_name = True
 
@@ -95,29 +96,22 @@ class NoaaSuviAnimatedPngImage(ImageEntity):
         session: ClientSession,
         source: _SuviSource,
     ) -> None:
-        # HA 12/2025 expects hass in ImageEntity.__init__
         super().__init__(hass)
 
         self._entry_id = entry_id
         self._session = session
         self._source = source
 
-        # Stable identity
         self._attr_unique_id = f"{entry_id}_{source.object_id}"
         self._attr_name = source.name
-
-        # Force stable entity_id via object_id (Entity Registry will respect unique_id)
         self._attr_object_id = source.object_id
 
-        # Frame state
         self._frames: list[str] = []
         self._frame_idx: int = 0
 
-        # Cache for current frame
         self._current_url: str | None = None
         self._current_bytes: bytes | None = None
 
-        # Cache-buster so frontend reloads the image
         self._attr_image_last_updated = dt_util.utcnow()
 
         self._unsub_advance = None
@@ -132,22 +126,30 @@ class NoaaSuviAnimatedPngImage(ImageEntity):
             "entry_type": "service",
         }
 
+    def _schedule_in_loop(self, coro: asyncio.coroutines) -> None:
+        """Schedule a coroutine onto the HA event loop from any thread safely."""
+        loop = self.hass.loop
+
+        def _create() -> None:
+            asyncio.create_task(coro)
+
+        loop.call_soon_threadsafe(_create)
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
 
-        # Initial listing
         await self._async_refresh_frame_list()
 
-        # async_track_time_interval expects a normal callback; schedule async work as tasks
+        # NOTE: callback might run off-loop -> schedule safely
         self._unsub_advance = async_track_time_interval(
             self.hass,
-            lambda now: self.hass.async_create_task(self._async_advance_frame()),
+            lambda now: self._schedule_in_loop(self._async_advance_frame()),
             timedelta(seconds=FRAME_ADVANCE_SECONDS),
         )
 
         self._unsub_refresh = async_track_time_interval(
             self.hass,
-            lambda now: self.hass.async_create_task(self._async_refresh_frame_list()),
+            lambda now: self._schedule_in_loop(self._async_refresh_frame_list()),
             timedelta(minutes=REFRESH_LIST_MINUTES),
         )
 
@@ -167,12 +169,11 @@ class NoaaSuviAnimatedPngImage(ImageEntity):
             return await resp.text()
 
     async def _async_refresh_frame_list(self) -> None:
-        """Refresh list of recent PNG frames from SWPC directory listing."""
         dir_url = self._source.dir_url
         try:
             html = await self._async_fetch_text(dir_url)
         except (ClientError, TimeoutError):
-            return  # keep current list
+            return
 
         names = PNG_HREF_RE.findall(html)
         pngs = [n for n in names if n.lower().endswith(".png")]
@@ -181,8 +182,6 @@ class NoaaSuviAnimatedPngImage(ImageEntity):
 
         latest_url = dir_url + "latest.png"
         non_latest = [u for u in urls if not u.endswith("/latest.png")]
-
-        # Sort by filename (timestamps in name => lexicographic works)
         non_latest_sorted = sorted(non_latest)
 
         if non_latest_sorted:
@@ -195,12 +194,10 @@ class NoaaSuviAnimatedPngImage(ImageEntity):
             self._frame_idx = 0
             self._current_url = None
             self._current_bytes = None
-
             self._attr_image_last_updated = dt_util.utcnow()
             self.async_write_ha_state()
 
     async def _async_advance_frame(self) -> None:
-        """Advance to next frame and mark image updated."""
         if not self._frames:
             self._frames = [self._source.dir_url + "latest.png"]
             self._frame_idx = 0
@@ -216,7 +213,6 @@ class NoaaSuviAnimatedPngImage(ImageEntity):
         self.async_write_ha_state()
 
     async def async_image(self) -> bytes | None:
-        """Return bytes for current frame."""
         if not self._frames:
             self._frames = [self._source.dir_url + "latest.png"]
             self._frame_idx = 0

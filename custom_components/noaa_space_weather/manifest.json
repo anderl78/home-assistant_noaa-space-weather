@@ -7,5 +7,5 @@
   "issue_tracker": "https://github.com/anderl78/home-assistant_noaa-space-weather/issues",
   "iot_class": "cloud_polling",
   "requirements": [],
-  "version": "3.3.2"
+  "version": "3.3.1"
 }

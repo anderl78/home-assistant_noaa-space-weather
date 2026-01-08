@@ -6,7 +6,7 @@ from homeassistant.const import Platform
 
 DOMAIN = "noaa_space_weather"
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.IMAGE]
 
 STARTUP_MESSAGE = "NOAA Space Weather custom integration loaded"
 

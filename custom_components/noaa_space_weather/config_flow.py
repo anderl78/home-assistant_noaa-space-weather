@@ -15,7 +15,6 @@ class NoaaSpaceWeatherFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input=None):
         """Handle the initial step."""
-        # Single instance
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
 
@@ -40,5 +39,4 @@ class NoaaSpaceWeatherOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         """Manage the options."""
-        # No options currently
         return self.async_create_entry(title="", data={})

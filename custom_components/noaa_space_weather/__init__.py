@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import timedelta
 from typing import Any
@@ -10,6 +9,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import NoaaSpaceWeatherApiClient
@@ -30,24 +30,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     _LOGGER.info(STARTUP_MESSAGE)
 
-    client = NoaaSpaceWeatherApiClient()
+    session = async_get_clientsession(hass)
+    client = NoaaSpaceWeatherApiClient(session)
     coordinator = NoaaSpaceWeatherDataUpdateCoordinator(hass, client=client)
 
-    # Home Assistant standard: do a first refresh here and raise ConfigEntryNotReady on failures
     try:
         await coordinator.async_config_entry_first_refresh()
     except Exception as err:
-        # This will cause HA to retry later instead of "half-loading" the integration.
         raise ConfigEntryNotReady from err
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Forward platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Register update listener exactly once
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
-
     return True
 
 
@@ -55,7 +51,6 @@ class NoaaSpaceWeatherDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
     """Coordinator to manage fetching NOAA Space Weather data."""
 
     def __init__(self, hass: HomeAssistant, client: NoaaSpaceWeatherApiClient) -> None:
-        """Initialize."""
         self.api = client
         super().__init__(
             hass=hass,
@@ -65,11 +60,9 @@ class NoaaSpaceWeatherDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from API."""
         try:
             return await self.api.async_get_data()
         except Exception as err:
-            # Mark update failed; entities will keep old state + show unavailable if needed
             raise UpdateFailed(str(err)) from err
 
 
